@@ -49,7 +49,7 @@ export function useBoard(userId: string | null) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (retrying = false) => {
     if (!userId) return
     setLoading(true)
     setError(null)
@@ -66,6 +66,15 @@ export function useBoard(userId: string | null) {
       setMembers(membersRes.data ?? [])
       setLabels(labelsRes.data ?? [])
     } catch (err) {
+      // A 401 here means the cached session token is no longer valid server-side.
+      // Refresh the guest session once and retry before surfacing an error.
+      const isAuthError = err instanceof Object && 'code' in err && (err as { code?: string }).code === 'PGRST301'
+      if (!retrying && isAuthError) {
+        await supabase.auth.signOut()
+        await supabase.auth.signInAnonymously()
+        await loadAll(true)
+        return
+      }
       setError(err instanceof Error ? err.message : 'Failed to load your board')
     } finally {
       setLoading(false)

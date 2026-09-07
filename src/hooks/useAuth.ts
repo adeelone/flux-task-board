@@ -13,12 +13,21 @@ export function useAuth() {
     async function init() {
       try {
         const { data: sessionData } = await supabase.auth.getSession()
+
         if (sessionData.session?.user) {
-          if (mounted) {
-            setUser(sessionData.session.user)
-            setLoading(false)
+          // A cached session in localStorage isn't proof it's still valid server-side
+          // (e.g. it predates anonymous sign-ins being enabled, or was revoked) —
+          // verify with the server before trusting it, so a stale session can't
+          // silently break every board query with 401s.
+          const { data: verified, error: verifyError } = await supabase.auth.getUser()
+          if (!verifyError && verified.user) {
+            if (mounted) {
+              setUser(verified.user)
+              setLoading(false)
+            }
+            return
           }
-          return
+          await supabase.auth.signOut()
         }
 
         const { data, error: signInError } = await supabase.auth.signInAnonymously()
